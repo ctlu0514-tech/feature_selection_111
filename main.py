@@ -33,37 +33,52 @@ def save_gene_list(indices, gene_list, directory, filename):
     print(f"基因列表已成功保存至: {filepath}")
 
 # ========================> LASSO精选函数 <========================
-def refine_features_with_lasso(X_candidate, y, candidate_indices):
+def refine_features_with_lasso(X_candidate, y, candidate_indices, top_n):
     """
-    使用L1正则化的逻辑回归 (LASSO) 从候选特征集中精选特征。
-    """
-    print("\n--- 步骤 2.2: 使用LASSO进行特征精选 ---")
+    使用L1正则化的逻辑回归 (LASSO) 对特征进行重要性排序，并选择最重要的前 N 个。
     
+    参数:
+    X_candidate (np.array): 候选特征的数据矩阵。
+    y (np.array): 标签。
+    candidate_indices (list): 候选特征在原始数据集中的索引。
+    top_n (int): 希望最终选出的特征数量。
+    """
+    print(f"\n--- 步骤 2.2: 使用LASSO进行特征精选 (选取Top {top_n}) ---")
+
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_candidate)
 
     l1_logreg = LogisticRegressionCV(
-        Cs=10, 
-        cv=5, 
-        penalty='l1', 
+        Cs=10,
+        cv=5,
+        penalty='l1',
         solver='saga',
         random_state=42,
         max_iter=2000
     )
-    
+
     l1_logreg.fit(X_scaled, y)
     print(f"LASSO找到的最佳正则化强度C值为: {l1_logreg.C_[0]:.4f}")
 
-    non_zero_coeffs_mask = np.abs(l1_logreg.coef_[0]) > 1e-5
-    selected_indices_in_candidate = np.where(non_zero_coeffs_mask)[0]
-    
-    if len(selected_indices_in_candidate) == 0:
-        print("警告: LASSO筛选后没有剩下任何特征。")
+    # 获取所有特征的系数绝对值，作为它们的重要性得分
+    feature_importances = np.abs(l1_logreg.coef_[0])
+
+    # 如果所有系数都为0，则无法选择
+    if np.sum(feature_importances) == 0:
+        print("警告: LASSO筛选后所有特征系数均为0，无法进行选择。")
         return []
 
-    print(f"LASSO从 {X_candidate.shape[1]} 个候选特征中精选出 {len(selected_indices_in_candidate)} 个特征。")
+    # 1. 根据重要性得分对特征的索引进行降序排序
+    # np.argsort返回的是从小到大的索引，所以用[::-1]来反转它
+    sorted_indices = np.argsort(feature_importances)[::-1]
 
-    final_indices = [candidate_indices[i] for i in selected_indices_in_candidate]
+    # 2. 从排好序的索引中，选出前 top_n 个
+    top_n_indices_in_candidate = sorted_indices[:top_n]
+
+    print(f"LASSO从 {X_candidate.shape[1]} 个候选特征中精选出最重要的 {len(top_n_indices_in_candidate)} 个特征。")
+
+    # 3. 将这些在候选集中的索引，映射回原始数据集的索引
+    final_indices = [candidate_indices[i] for i in top_n_indices_in_candidate]
     return final_indices
 
 # ========================> 主程序 <========================
@@ -75,16 +90,17 @@ if __name__ == "__main__":
 
     # --- 实验参数 ---
     PRE_FILTER_TOP_N = 4000
-    THETA = 0.6
+    THETA = 0.4
     W_BIO_BOOST = 0.5 
-    RESULTS_DIR = "enrichment_inputs_Lung"
+    RESULTS_DIR = "enrichment_inputs_Colorectal"
     GA_POPULATION_SIZE = 100
 
     GA_OMEGA = 0.0125
-    SELECTION_RATIO=0.5
+    SELECTION_RATIO= 0.5
+    lasso_top_n= 50
 
     # 1. 加载数据
-    X, y, gene_list = load_and_preprocess_data(file_name='Lung_GSE19804_byGene.csv', label_line_name='type')
+    X, y, gene_list = load_and_preprocess_data(file_name='Colorectal_GSE21510_byGene.csv', label_line_name='type')
 
     if X is None:
         print("数据加载失败，程序终止。")
@@ -150,7 +166,7 @@ if __name__ == "__main__":
 
         # --- 步骤 2.2: LASSO精选 ---
         X_candidate = X[:, selected_indices_centrality]
-        final_selected_indices_lasso = refine_features_with_lasso(X_candidate, y, selected_indices_centrality)
+        final_selected_indices_lasso = refine_features_with_lasso(X_candidate, y, selected_indices_centrality,lasso_top_n)
         num_lasso_features = len(final_selected_indices_lasso)
         save_gene_list(final_selected_indices_lasso, gene_list, RESULTS_DIR, "centrality_lasso_selected_genes.txt")
 
@@ -170,7 +186,7 @@ if __name__ == "__main__":
         print("  - 分类性能:")
         evaluate_with_repeats(X, y, selected_indices_ga, "CDGAFS (GA)")
 
-        print("\n【方案二: 新方法 (分步评估)】")
+        # print("\n【方案二: 新方法 (分步评估)】")
         # print(f"  - 步骤 2.1 (中心性排序后):")
         # print(f"    - 特征数量: {num_centrality_features}")
         # print(f"    - 分类性能:")
