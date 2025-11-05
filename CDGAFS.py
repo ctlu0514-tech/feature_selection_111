@@ -81,6 +81,17 @@ def cdgafs_feature_selection(X, y, gene_list, theta, omega, population_size,
     clusters = [cluster for cluster in clusters.values()]
     print(f"检测到 {len(clusters)} 个社区。")
 
+    # # Step 3: 将所有节点定义为一个社区 (跳过ISCD)
+    # print("\nStep 3: 跳过社群检测，将所有节点定义为一个大社区...")
+    # # 获取特征子集中的节点总数（即特征数量）
+    # num_features_subset = X_subset.shape[1]
+    # # 创建一个包含所有节点索引的列表
+    # all_nodes_as_one_community = list(range(num_features_subset))
+    # # `clusters` 的数据结构是一个列表的列表，所以我们将上面的列表作为唯一的元素
+    # clusters = [all_nodes_as_one_community]
+    # partition = {node: 0 for node in range(num_features_subset)}
+    # print(f"已手动定义 {len(clusters)} 个社群。")
+    
     # Step 4: 初始化种群并执行遗传算法
     print("\nStep 4: 执行遗传算法...")
     num_features_subset = X_subset.shape[1]
