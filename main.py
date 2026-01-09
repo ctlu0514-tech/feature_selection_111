@@ -90,7 +90,7 @@ if __name__ == "__main__":
 
     # --- 实验参数 ---
     PRE_FILTER_TOP_N = 4000
-    THETA = 0.7
+    THETA = 0.8
     W_BIO_BOOST = 0.5 
     RESULTS_DIR = "enrichment_inputs_Colorectal"
     GA_POPULATION_SIZE = 100
