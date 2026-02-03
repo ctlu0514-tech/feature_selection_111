@@ -1,11 +1,111 @@
 import random
 from collections import defaultdict
 import numpy as np
-from calculate_fitness import calculate_fitness  
+from calculate_fitness import calculate_fitness
+from compute_similarity_matrix import compute_similarity_matrix
+from fisher_score import compute_fisher_score
+from normalize_scores import normalize_scores
+from final_subset_selection import final_subset_selection
 
 def set_random_seed(seed: int):
     random.seed(seed)
     np.random.seed(seed)
+
+def load_clusters_from_txt(file_path, gene_list):
+    """
+    从 txt 文件加载社团结构，并转换为特征索引列表。
+
+    文件格式:
+        每行一个社团，基因符号以空格分隔。
+
+    参数:
+        file_path (str): 社团文件路径。
+        gene_list (list): 原始基因列表，用于映射到索引。
+
+    返回:
+        clusters (list[list[int]]): 每个社团对应的特征索引。
+        missing_genes (list[str]): 未在 gene_list 中找到的基因符号。
+    """
+    gene_to_index = {gene: idx for idx, gene in enumerate(gene_list)}
+    clusters = []
+    missing_genes = []
+
+    with open(file_path, "r") as handle:
+        for line in handle:
+            tokens = [token for token in line.strip().split() if token]
+            if not tokens:
+                continue
+            cluster_indices = []
+            for gene in tokens:
+                if gene in gene_to_index:
+                    cluster_indices.append(gene_to_index[gene])
+                else:
+                    missing_genes.append(gene)
+            if cluster_indices:
+                clusters.append(cluster_indices)
+
+    return clusters, missing_genes
+
+def run_ga_with_communities(
+    X_train,
+    y_train,
+    gene_list,
+    community_txt_path,
+    omega,
+    population_size,
+    similarity_matrix=None,
+    normalized_fisher_scores=None,
+):
+    """
+    使用外部社区结构文件直接运行遗传算法与特征筛选。
+
+    参数:
+        X_train (np.ndarray): 训练特征矩阵。
+        y_train (np.ndarray): 训练标签。
+        gene_list (list): 基因符号列表，顺序与 X_train 列一致。
+        community_txt_path (str): 社团文件路径（每行一个社团，空格分隔基因符号）。
+        omega (float): 每个社团选取的特征比例。
+        population_size (int): 种群大小。
+        similarity_matrix (np.ndarray, optional): 相似度矩阵，若为空则自动计算。
+        normalized_fisher_scores (dict/np.ndarray, optional): 归一化 Fisher 分数，若为空则自动计算。
+
+    返回:
+        selected_indices (list[int]): GA 选择出的特征索引。
+        population (list[np.ndarray]): 最终种群。
+        fitness_values (list[float]): 最终适应度列表。
+    """
+    clusters, missing_genes = load_clusters_from_txt(community_txt_path, gene_list)
+    if not clusters:
+        raise ValueError("未从社区文件中解析到任何有效社团，请检查格式或基因符号。")
+    if missing_genes:
+        print(f"警告: 有 {len(missing_genes)} 个基因未在 gene_list 中找到，将被忽略。")
+
+    if similarity_matrix is None:
+        similarity_matrix = compute_similarity_matrix(X_train)
+
+    if normalized_fisher_scores is None:
+        fisher_scores = compute_fisher_score(X_train, y_train)
+        normalized_fisher_scores = normalize_scores(fisher_scores)
+
+    num_features = X_train.shape[1]
+    population = initialize_population(num_features, clusters, omega, population_size)
+    fitness_values = calculate_fitness(population, X_train, y_train, similarity_matrix, n_jobs=10)
+
+    population, fitness_values = genetic_algorithm(
+        population,
+        fitness_values,
+        X_train,
+        y_train,
+        clusters,
+        omega,
+        similarity_matrix,
+        population_size,
+        num_features,
+        normalized_fisher_scores,
+    )
+
+    best_chromosome, selected_indices = final_subset_selection(population, fitness_values)
+    return selected_indices, population, fitness_values
 
 def initialize_population(num_features, clusters, omega, population_size):
     """
